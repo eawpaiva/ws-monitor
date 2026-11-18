@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>WS Monitor · testes unitários</title>
+<style>
+  body { background: #0b0a0a; color: #f4f1ec; font: 13px/1.5 ui-monospace, Consolas, monospace; padding: 16px; }
+  .ok { color: #6fd39a; } .err { color: #ff8a7a; } h1 { font-size: 15px; }
+</style>
+</head>
+<body>
+<h1>WS Monitor · testes unitários (protocolo WH24C e formatação)</h1>
+<div id="summary">rodando…</div>
+<pre id="out"></pre>
+<script type="module">
+import { crcTable, crc8, sum8, checkFrame, decode, assess, encodeRaw, rawFromValues, splitBurst, uviFromRaw, parseHexBytes, toHex, cardinal, DEFAULT_FACTORS, FrameSplitter } from '../js/wh24c.js';
+import { csvRow, csvHeader, compactLine, detailLines } from '../js/format.js';
+
+const out = document.getElementById('out');
+let ok = 0, fail = 0;
+const t = (name, cond, extra = '') => {
+  if (cond) { ok++; out.insertAdjacentHTML('beforeend', '<span class="ok">ok  </span>' + name + '\n'); }
+  else { fail++; out.insertAdjacentHTML('beforeend', '<span class="err">FALHA</span> ' + name + (extra ? ' · ' + extra : '') + '\n'); }
+};
+const near = (a, b, eps = 1e-9) => a !== null && Math.abs(a - b) < eps;
+
+/* Tabela do crc_wh24c.py (weather_simulator_desktop) */
+const PY_TABLE = [0x00,0x31,0x62,0x53,0xc4,0xf5,0xa6,0x97,0xb9,0x88,0xdb,0xea,0x7d,0x4c,0x1f,0x2e,0x43,0x72,0x21,0x10,0x87,0xb6,0xe5,0xd4,0xfa,0xcb,0x98,0xa9,0x3e,0x0f,0x5c,0x6d,0x86,0xb7,0xe4,0xd5,0x42,0x73,0x20,0x11,0x3f,0x0e,0x5d,0x6c,0xfb,0xca,0x99,0xa8,0xc5,0xf4,0xa7,0x96,0x01,0x30,0x63,0x52,0x7c,0x4d,0x1e,0x2f,0xb8,0x89,0xda,0xeb,0x3d,0x0c,0x5f,0x6e,0xf9,0xc8,0x9b,0xaa,0x84,0xb5,0xe6,0xd7,0x40,0x71,0x22,0x13,0x7e,0x4f,0x1c,0x2d,0xba,0x8b,0xd8,0xe9,0xc7,0xf6,0xa5,0x94,0x03,0x32,0x61,0x50,0xbb,0x8a,0xd9,0xe8,0x7f,0x4e,0x1d,0x2c,0x02,0x33,0x60,0x51,0xc6,0xf7,0xa4,0x95,0xf8,0xc9,0x9a,0xab,0x3c,0x0d,0x5e,0x6f,0x41,0x70,0x23,0x12,0x85,0xb4,0xe7,0xd6,0x7a,0x4b,0x18,0x29,0xbe,0x8f,0xdc,0xed,0xc3,0xf2,0xa1,0x90,0x07,0x36,0x65,0x54,0x39,0x08,0x5b,0x6a,0xfd,0xcc,0x9f,0xae,0x80,0xb1,0xe2,0xd3,0x44,0x75,0x26,0x17,0xfc,0xcd,0x9e,0xaf,0x38,0x09,0x5a,0x6b,0x45,0x74,0x27,0x16,0x81,0xb0,0xe3,0xd2,0xbf,0x8e,0xdd,0xec,0x7b,0x4a,0x19,0x28,0x06,0x37,0x64,0x55,0xc2,0xf3,0xa0,0x91,0x47,0x76,0x25,0x14,0x83,0xb2,0xe1,0xd0,0xfe,0xcf,0x9c,0xad,0x3a,0x0b,0x58,0x69,0x04,0x35,0x66,0x57,0xc0,0xf1,0xa2,0x93,0xbd,0x8c,0xdf,0xee,0x79,0x48,0x1b,0x2a,0xc1,0xf0,0xa3,0x92,0x05,0x34,0x67,0x56,0x78,0x49,0x1a,0x2b,0xbc,0x8d,0xde,0xef,0x82,0xb3,0xe0,0xd1,0x46,0x77,0x24,0x15,0x3b,0x0a,0x59,0x68,0xff,0xce,0x9d,0xac];
+t('tabela CRC-8 (polinômio 0x31) igual à do crc_wh24c.py', crcTable().every((x, i) => x === PY_TABLE[i]) && PY_TABLE.length === 256);
+
+/* Pacote do weather.py (chuva 7,5 mm = 25 contagens), checksum fixo 0x2C */
+const py = Uint8Array.from([0x24, 0xfa, 0x53, 0x62, 0x8a, 0x45, 0, 0, 0, 0x19, 0, 0x02, 0, 0, 0, 0, 0x2c]);
+py[15] = crc8(py, 0, 15);
+const c = checkFrame(py);
+t('weather.py: CRC confere', c.crcOk);
+t('weather.py: checksum fixo 0x2C não confere (o script não recalcula o byte 16)', !c.sumOk, 'calc ' + c.sumCalc.toString(16));
+const d = decode(py);
+t('weather.py: ID 0xFA', d.id === 0xfa);
+t('weather.py: direção 83°', d.values.dir === 83);
+t('weather.py: temperatura 25,0 °C (0x28A)', near(d.values.temp, 25));
+t('weather.py: umidade 69 %', d.values.hum === 69);
+t('weather.py: chuva 7,5 mm (25 × 0,3)', near(d.values.rain, 7.5, 1e-6));
+t('weather.py: UV bruto 2, UVI 0', d.values.uv === 2 && d.values.uvi === 0);
+t('weather.py: bits fixos 11, bateria OK', d.fixOk && !d.lowBattery);
+
+/* Exemplos do manual */
+const tf = (raw) => decode(encodeRaw({ temp: raw })).values.temp;
+t('manual: 0x1F9 = 10,5 °C', near(tf(0x1f9), 10.5));
+t('manual: 0x127 = −10,5 °C', near(tf(0x127), -10.5));
+const pf = decode(encodeRaw({ pressure: 0x018a9e }));
+t('manual: pressão 0x018A9E = 1010,22 hPa (frame de 20 bytes)', pf.len === 20 && near(pf.values.pressure, 1010.22, 1e-9));
+
+/* 9º bits (direção e vento) e bateria */
+const r9 = decode(encodeRaw({ dir: 300, wind: 300, lowBattery: 1, temp: 1000 }));
+t('direção 300° (9º bit no byte 3, bit 7)', r9.values.dir === 300);
+t('vento bruto 300 (9º bit no byte 3, bit 4) = 300/8 × 1,12 = 42 m/s (padrão do firmware)', near(r9.values.wind, 42, 1e-9));
+t('vento linear do manual (fator 0,4, sem curva): 300/8 × 0,4 = 15 m/s', near(decode(encodeRaw({ wind: 300 }), { wind: 0.4, curve: false }).values.wind, 15));
+t('bateria baixa (byte 3, bit 3)', r9.lowBattery);
+t('temperatura bruta 1000 = 60,0 °C', near(r9.values.temp, 60));
+t('rajada bruta 10 × 1,12 = 11,2 m/s (acima de 14,5 km/h: sem curva)', near(decode(encodeRaw({ gust: 10 })).values.gust, 11.2, 1e-9));
+t('rajada linear (fator 0,4, sem curva) = 4 m/s', near(decode(encodeRaw({ gust: 10 }), { gust: 0.4, curve: false }).values.gust, 4));
+
+/* Firmware do coletor (beweather-firmware/components/weatherstation/ws_wh24c.c), copiado como está:
+   devolve km/h. O app tem que dar o mesmo valor (em m/s × 3,6) para todos os brutos válidos. */
+const fwWind = (p) => { let s = (p * 1.12) / 8; if (s > 50) return 50 * 3.6; s = s * 3.6; if (14.5 >= s) return 2.30403498 * s - 0.08951347 * (s * s); return s; };
+const fwGust = (p) => { let g = p * 1.12; if (g > 50) return 50 * 3.6; g = g * 3.6; if (14.5 >= g) return 2.30403498 * g - 0.08951347 * (g * g); return g; };
+const fwUvi = (p) => { if (p === 0xffff) return -1; const L = [[99, 0], [540, 1], [1000, 2], [1400, 3], [1843, 4], [2292, 4], [2734, 6], [3138, 7], [3648, 8], [4196, 9], [4707, 10], [5209, 11], [5735, 12], [6276, 13], [6778, 14]]; for (const [lim, v] of L) if (p < lim) return v; return 15; };
+let badW = [], badG = [], badU = [];
+for (let raw = 0; raw < 0x1ff; raw++) { const app = decode(encodeRaw({ wind: raw })).values.wind * 3.6; if (Math.abs(app - fwWind(raw)) > 1e-3) badW.push(raw); }
+for (let raw = 0; raw < 0xff; raw++) { const app = decode(encodeRaw({ gust: raw })).values.gust * 3.6; if (Math.abs(app - fwGust(raw)) > 1e-3) badG.push(raw); }
+for (let raw = 0; raw <= 20000; raw++) { const exp = raw >= 1843 && raw < 2292 ? 5 : fwUvi(raw); if (uviFromRaw(raw) !== exp) badU.push(raw); }
+t('vento: igual ao firmware em km/h para os brutos 0 a 510 (fator 1,12, curva até 14,5 km/h, limite 50 m/s)', !badW.length, badW.slice(0, 5).join(','));
+t('rajada: igual ao firmware em km/h para os brutos 0 a 254', !badG.length, badG.slice(0, 5).join(','));
+t('índice UV: tabela do firmware de 0 a 20000 (exceto 1843-2291, onde o firmware repete 4 e o app dá 5)', !badU.length, badU.slice(0, 5).join(','));
+t('curva: 1 contagem de vento = 0,504 km/h linear -> 1,138 km/h', near(decode(encodeRaw({ wind: 1 })).values.wind * 3.6, 2.30403498 * 0.504 - 0.08951347 * 0.504 * 0.504, 1e-9));
+t('curva desligada: 1 contagem = 0,14 m/s', near(decode(encodeRaw({ wind: 1 }), { curve: false }).values.wind, 0.14, 1e-12));
+t('luz bruta 123456 × 0,1 = 12345,6 lux', near(decode(encodeRaw({ light: 123456 })).values.light, 12345.6, 1e-6));
+t('fatores personalizados (vento 1,12)', near(decode(encodeRaw({ wind: 80 }), { wind: 1.12 }).values.wind, 11.2, 1e-9));
+
+/* Ida e volta: valores -> bruto -> pacote -> valores */
+const v0 = { id: 7, dir: 271, temp: -12.3, hum: 45, wind: 7.28, gust: 9.2, rain: 12.3, uv: 3333, light: 54321.5, pressure: 1003.07, lowBattery: false };
+const back = decode(encodeRaw(rawFromValues(v0)));
+t('ida e volta: direção, temperatura, umidade', back.values.dir === 271 && near(back.values.temp, -12.3, 1e-9) && back.values.hum === 45);
+t('ida e volta: vento 7,28 m/s, chuva 12,3 mm, pressão 1003,07 hPa', near(back.values.wind, 7.28, 1e-9) && near(back.values.rain, 12.3, 1e-6) && near(back.values.pressure, 1003.07, 1e-9));
+t('pacote montado tem CRC e checksum válidos', (() => { const k = checkFrame(encodeRaw({})); return k.crcOk && k.sumOk; })());
+
+/* Marcadores de inválido */
+const inv = encodeRaw({ dir: 0x1ff, temp: 0x7ff, hum: 0xff, gust: 0xff, uv: 0xffff, light: 0xffffff });
+const di = decode(inv), ai = assess(di);
+t('inválidos -> null (direção, temperatura, umidade, rajada, UV, luz)', ['dir', 'temp', 'hum', 'gust', 'uv', 'light'].every((k) => di.values[k] === null));
+t('inválidos -> status err', ['dir', 'temp', 'hum', 'gust', 'uv', 'light'].every((k) => ai[k].st === 'err'));
+t('pressão ausente (17 bytes) -> none', ai.pressure.st === 'none');
+
+/* Faixas */
+const a1 = assess(decode(encodeRaw({ temp: 400 - 350, hum: 5 })));  // -35 °C (fora da faixa de medição, dentro do protocolo)
+t('-35 °C: aviso (faixa de medição −30 a 60)', a1.temp.st === 'warn');
+t('umidade 5 %: aviso (faixa de medição 10 a 99)', a1.hum.st === 'warn');
+t('-45 °C: falha (protocolo −40 a 60)', assess(decode(encodeRaw({ temp: 400 - 450 }))).temp.st === 'err');
+t('direção 400: falha (protocolo 0 a 359)', assess(decode(encodeRaw({ dir: 400 }))).dir.st === 'err');
+t('valores normais: tudo ok', Object.values(assess(decode(encodeRaw({})))).every((x) => x.st === 'ok' || x.st === 'none'));
+
+/* Separação dos pacotes */
+const A = encodeRaw({ id: 1 }), B = encodeRaw({ id: 2, pressure: 101325 });
+const cat = (...xs) => Uint8Array.from(xs.flatMap((x) => [...x]));
+let p = splitBurst(cat(A, A));
+t('dois pacotes de 17 bytes seguidos', p.length === 2 && p.every((x) => x.kind === 'frame' && x.bytes.length === 17));
+p = splitBurst(B);
+t('pacote com pressão (20 bytes)', p.length === 1 && p[0].bytes.length === 20);
+p = splitBurst(cat([0x00, 0xff, 0x13], A));
+t('lixo antes do pacote', p.length === 2 && p[0].kind === 'junk' && p[0].bytes.length === 3 && p[1].kind === 'frame');
+p = splitBurst(cat(A, [0x00, 0x00, 0x01]));
+t('3 bytes que não são pressão plausível viram lixo', p.length === 2 && p[0].bytes.length === 17 && p[1].kind === 'junk');
+const bad = A.slice(); bad[5] ^= 1;
+p = splitBurst(bad);
+t('pacote com CRC errado ainda é separado como pacote (para contar o erro)', p.length === 1 && p[0].kind === 'frame' && !checkFrame(p[0].bytes).crcOk);
+p = splitBurst(cat(A, B, A));
+t('17 + 20 + 17 bytes', p.map((x) => x.bytes.length).join(',') === '17,20,17');
+p = splitBurst(Uint8Array.from([0x24, 1, 2]));
+t('pedaço curto vira lixo', p.length === 1 && p[0].kind === 'junk');
+
+/* Horário de cada pacote quando vários chegam na mesma entrega (janela minimizada: o temporizador
+   atrasa e o silêncio é detectado na chegada do pedaço seguinte) */
+{
+  const got = [];
+  const sp = new FrameSplitter({ gapMs: 80, onBurst: (b, t0, timeAt) => { for (const p of splitBurst(b)) got.push([p.bytes[1], timeAt(p.offset)]); } });
+  const F = (id) => encodeRaw({ id });
+  sp.push(F(1).slice(0, 10), 1000); sp.push(F(1).slice(10), 1009);  // pacote 1 em dois pedaços
+  sp.push(F(2), 17000);                                               // 16 s depois: entrega o pacote 1
+  sp.push(F(3), 33000);                                               // entrega o pacote 2
+  sp.flush();                                                         // entrega o pacote 3
+  t('separação pelo silêncio na chegada, sem depender do temporizador', got.map((x) => x[0]).join(',') === '1,2,3', JSON.stringify(got));
+  t('cada pacote com a hora de chegada do seu primeiro byte', got.map((x) => x[1]).join(',') === '1000,17000,33000', JSON.stringify(got));
+  const got2 = [];
+  const sp2 = new FrameSplitter({ gapMs: 80, onBurst: (b, t0, timeAt) => { for (const p of splitBurst(b)) got2.push(timeAt(p.offset)); } });
+  sp2.push(F(4), 5000); sp2.push(F(5), 5030); sp2.flush();          // dois pacotes colados na mesma rajada
+  t('dois pacotes na mesma rajada mantêm horários distintos', got2.join(',') === '5000,5030', got2.join(','));
+}
+
+/* Índice UV (tabela do firmware do coletor) */
+t('UVI: 98→0, 99→1, 1842→4, 1843→5, 2292→6, 6777→14, 6778→15, 20000→15', [98, 99, 1842, 1843, 2292, 6777, 6778, 20000].map(uviFromRaw).join(',') === '0,1,4,5,6,14,15,15');
+
+/* Utilitários */
+t('parseHexBytes aceita espaços, 0x e vírgulas', toHex(parseHexBytes('0x24, fa 53')) === '24 FA 53');
+t('parseHexBytes recusa ímpar', parseHexBytes('24F') === null);
+t('rosa dos ventos: 0 N, 90 L, 200 SSO, 359 N', [0, 90, 200, 359].map(cardinal).join(',') === 'N,L,SSO,N');
+
+/* CSV */
+const rec = { seq: 1, t: Date.UTC(2026, 0, 2, 3, 4, 5), source: 'serial', bytes: A, hex: toHex(A), check: checkFrame(A), status: 'ok', dec: decode(encodeRaw({ temp: 653 })), alerts: ['x;y'] };
+rec.asm = assess(rec.dec);
+const br = csvRow(rec, 'br'), intl = csvRow(rec, 'intl');
+t('CSV pt-BR: ";" e vírgula decimal (25,3)', br.includes(';25,3;'), br);
+t('CSV internacional: "," e ponto decimal (25.3)', intl.includes(',25.3,'), intl);
+t('CSV: célula com o separador vai entre aspas', br.includes('"x;y"'));
+t('CSV: mesmo número de colunas do cabeçalho', br.trim().split(';').length - 1 === csvHeader('br').trim().split(';').length);
+t('linha de texto compacta', compactLine(rec).includes('T 25,3 °C'), compactLine(rec));
+t('detalhamento', detailLines(rec).some((l) => l.includes('Temperatura')));
+
+document.getElementById('summary').innerHTML = '<b class="' + (fail ? 'err' : 'ok') + '">' + ok + ' ok, ' + fail + ' falha(s)</b>';
+</script>
+</body>
+</html>

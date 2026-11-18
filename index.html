@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#121110">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Leitura e decodificação dos pacotes da estação meteorológica WH24C (RS-485) pelo navegador.">
+<title>WS Monitor</title>
+<link rel="icon" href="assets/icons/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preload" href="assets/fonts/Montserrat-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body data-tab="dash">
+
+<!-- Tela de abertura: fade + zoom do logo, subtítulo em fade e pulso da seta (a mesma do B2K Flash, em cinza) -->
+<div class="splash" id="splash" aria-hidden="true">
+  <svg viewBox="0 0 2795 925" role="img" aria-label="B2K Tech"><g transform="matrix(4.766395,0,0,4.766395,2.497172,0)"><path class="lt" d="M207.294,160.814L207.079,87.443C241.902,73.973 268.257,82.145 267.706,123.911C267.213,161.332 239.387,178.043 207.294,160.814ZM175.711,6.232L175.635,193.656L192.532,194.067C194.619,191.65 197.139,188.189 200.311,184.848C327.979,238.904 338.62,18.01 207.034,61.042L207.064,0L175.711,6.232Z"/><path class="lt" d="M442.039,153.023C443.06,146.665 443.32,140.053 442.588,133.587L428.663,133.969C417.013,194.446 382.749,138.078 332.885,159.8C353.5,124.975 396.535,134.377 423.018,113.801C448.371,94.104 446.501,45.713 400.979,31.705C362.504,19.864 313.815,36.541 313.205,74.586C312.908,93.147 329.593,110.809 349.731,98.76C364.651,89.834 363.364,62.048 332.731,65.507C339.4,47.367 368.137,39.176 387.607,52.485C406.642,65.496 401.862,92.72 384.583,104.355C363.352,118.649 304.054,129.213 310.122,190.25L324.188,190.567C328.081,180.022 330.336,164.482 357.573,178.857C378.59,189.949 407.635,202.384 426.117,186.569C435.309,178.702 440.169,164.664 442.039,153.023Z"/><path class="lt" d="M564.805,71.863L575.055,59.402L541.291,59.378L493.377,109.729L493.457,2.127L461.916,8.269L461.67,194.067L493.375,193.414L493.457,147.473L508.294,133.825L547.135,193.98L585.244,194.019L581.594,187.579L531.201,109.974L564.805,71.863Z"/><g class="arw"><path class="a1" d="M133.086,58.598L0.442,58.273L66.927,124.758L133.086,58.598Z"/><path class="a2" d="M0,194.067L0.442,103.757L45.376,148.691L0,194.067Z"/><path class="a2" d="M45.855,103.811L68.001,81.448L133.736,147.184L133.736,191.693L45.855,103.811Z"/></g></g></svg>
+  <div class="sub">WS Monitor · WH24C</div>
+</div>
+
+<div class="wrap">
+  <header class="top">
+    <button class="menu" id="navToggle" type="button" aria-label="Abrir o menu"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg></button>
+    <div class="brand">
+      <svg viewBox="0 0 2795 925" role="img" aria-label="B2K Tech"><g transform="matrix(4.766395,0,0,4.766395,2.497172,0)"><path class="lt" d="M207.294,160.814L207.079,87.443C241.902,73.973 268.257,82.145 267.706,123.911C267.213,161.332 239.387,178.043 207.294,160.814ZM175.711,6.232L175.635,193.656L192.532,194.067C194.619,191.65 197.139,188.189 200.311,184.848C327.979,238.904 338.62,18.01 207.034,61.042L207.064,0L175.711,6.232Z"/><path class="lt" d="M442.039,153.023C443.06,146.665 443.32,140.053 442.588,133.587L428.663,133.969C417.013,194.446 382.749,138.078 332.885,159.8C353.5,124.975 396.535,134.377 423.018,113.801C448.371,94.104 446.501,45.713 400.979,31.705C362.504,19.864 313.815,36.541 313.205,74.586C312.908,93.147 329.593,110.809 349.731,98.76C364.651,89.834 363.364,62.048 332.731,65.507C339.4,47.367 368.137,39.176 387.607,52.485C406.642,65.496 401.862,92.72 384.583,104.355C363.352,118.649 304.054,129.213 310.122,190.25L324.188,190.567C328.081,180.022 330.336,164.482 357.573,178.857C378.59,189.949 407.635,202.384 426.117,186.569C435.309,178.702 440.169,164.664 442.039,153.023Z"/><path class="lt" d="M564.805,71.863L575.055,59.402L541.291,59.378L493.377,109.729L493.457,2.127L461.916,8.269L461.67,194.067L493.375,193.414L493.457,147.473L508.294,133.825L547.135,193.98L585.244,194.019L581.594,187.579L531.201,109.974L564.805,71.863Z"/><path class="a1" d="M133.086,58.598L0.442,58.273L66.927,124.758L133.086,58.598Z"/><path class="a2" d="M0,194.067L0.442,103.757L45.376,148.691L0,194.067Z"/><path class="a2" d="M45.855,103.811L68.001,81.448L133.736,147.184L133.736,191.693L45.855,103.811Z"/></g></svg>
+      <span class="name">WS Monitor · WH24C</span>
+    </div>
+    <span class="sp"></span>
+    <div class="clock" title="Data e hora deste computador"><span class="d" id="clkDate">--/--/--</span><span class="t" id="clkTime">--:--:--</span></div>
+    <!-- Troca rápida do modo de exibição (o mesmo do menu lateral) -->
+    <div class="pagesw" id="viewSwitch" role="tablist" aria-label="Modo de exibição">
+      <button type="button" role="tab" data-tab="dash" class="on" title="Cartões com os valores atuais e as mini-séries">Dashboard</button>
+      <button type="button" role="tab" data-tab="table" title="Um pacote por linha">Tabela</button>
+      <button type="button" role="tab" data-tab="text" title="Saída decodificada em texto">Texto</button>
+    </div>
+  </header>
+
+  <div class="bar">
+    <h2 class="mode" id="modeTitle">Dashboard</h2>
+    <span class="sp"></span>
+    <div class="conn">
+      <button class="pill rec hide" id="recPill" type="button" title="Gravação de medições em andamento: clique para ver o quadro da gravação"><i></i>Gravando</button>
+      <span class="pill warn hide" id="simPill" title="Pacotes gerados pelo simulador do Modo Desenvolvedor"><i></i>Simulação</span>
+      <button class="pill" id="portPill" type="button"><i></i>Nenhuma porta selecionada</button>
+      <label class="sel" title="Velocidade da porta serial (o padrão da WH24C é 9600, 8N1)">baudrate <select id="baud"></select></label>
+      <button class="btn sm" id="btnConnect">Conectar</button>
+      <button class="btn ghost sm hide" id="btnDisconnect">Desconectar</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <nav class="tabs" id="tabs" aria-label="Menu">
+      <button data-tab="dash" class="on"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z"/></svg><span class="lbl">Dashboard</span></button>
+      <button data-tab="table"><svg viewBox="0 0 24 24"><path d="M3 3h18v18H3zm2 2v3h14V5zm0 5v4h4v-4zm6 0v4h8v-4zm-6 6v3h4v-3zm6 0v3h8v-3z"/></svg><span class="lbl">Tabela</span></button>
+      <button data-tab="text"><svg viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V8h16zM6 10l4 3-4 3zm5 5h7v1h-7z"/></svg><span class="lbl">Texto</span></button>
+      <button data-tab="ref"><svg viewBox="0 0 24 24"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM9 4h2v5l-1-.75L9 9zm9 16H6V4h1v9l3-2.25L13 13V4h5z"/></svg><span class="lbl">Referência</span></button>
+      <button data-tab="dev"><svg viewBox="0 0 24 24"><path d="M12 1 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5zm0 6a2.5 2.5 0 0 1 1 4.8V15h-2v-3.2A2.5 2.5 0 0 1 12 7z"/></svg><span class="lbl">Desenvolvedor</span></button>
+    </nav>
+    <div class="scrim" id="scrim"></div>
+    <div class="content">
+  <div class="banner err hide" id="unsupported">
+    <b>Navegador sem Web Serial.</b> Abra o WS Monitor no Google Chrome ou no Microsoft Edge (computador) para ler a estação.
+  </div>
+
+  <div class="layout">
+    <!-- Coluna esquerda: estação (situação da comunicação) e gravação de medições -->
+    <aside class="col">
+      <div class="card" id="stCard">
+        <h3><i class="dot"></i>Estação<span class="sp"></span><span class="tag" id="stTag">Desconectado</span></h3>
+        <div id="stInfo"></div>
+        <div class="nextbar" id="stNext" title="Tempo até o próximo pacote (a estação transmite a cada 16 s)"><i></i></div>
+        <div class="btns end">
+          <button class="btn ghost sm" id="stReset" title="Zera contadores, mín./máx. e as mini-séries (não afeta a gravação)">Nova sessão</button>
+        </div>
+      </div>
+
+      <div class="card" id="recCard">
+        <h3><i class="dot"></i>Gravação de medições<span class="sp"></span><span class="tag" id="recTag">Parada</span></h3>
+        <p class="desc">Grava cada pacote recebido num arquivo escolhido por você, para auditoria ou importação em outro computador.</p>
+        <div class="recfmt">
+          <span class="small muted">Formato</span>
+          <span class="seg" id="recFmt"><button type="button" data-fmt="csv" class="on" title="Uma linha por pacote, colunas separadas (planilhas e outros sistemas)">CSV</button><button type="button" data-fmt="txt" title="Texto legível, uma linha por pacote">TXT</button></span>
+        </div>
+        <div class="form one">
+          <label id="recStyleRow">Padrão do CSV<span class="inp"><select id="recStyle" data-reclock></select></span></label>
+          <label>Operador<span class="inp"><input id="recOperator" maxlength="60" autocomplete="off" spellcheck="false" data-reclock></span></label>
+          <label>Equipamento / nº de série<span class="inp"><input id="recDevice" maxlength="60" autocomplete="off" spellcheck="false" data-reclock></span></label>
+          <label>Observações<span class="inp"><input id="recNotes" maxlength="200" autocomplete="off" data-reclock></span></label>
+        </div>
+        <label class="opt" style="margin-top:12px"><input type="checkbox" id="recInvalid" checked data-reclock> Incluir pacotes com erro (CRC/checksum)</label>
+        <label class="opt" id="recHeaderRow"><input type="checkbox" id="recHeader" checked data-reclock> Cabeçalho de identificação (linhas com #)</label>
+        <div id="recInfo"></div>
+        <button class="btn big" id="recStart" type="button">Iniciar gravação</button>
+        <button class="btn big stop hide" id="recStop" type="button">Parar gravação</button>
+        <button class="btn big ghost hide" id="recReport" type="button" title="Resumo do monitoramento: identificação, período, arquivo e SHA-256, comunicação e estatística de cada grandeza"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm2 18H8v-2h8zm0-4H8v-2h8zm-3-7V3.5L18.5 9z"/></svg>Salvar relatório do monitoramento</button>
+      </div>
+    </aside>
+
+    <main class="col">
+      <!-- Dashboard -->
+      <section class="panel on" id="panel-dash">
+        <div class="banner warn hide" id="dashBat"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg><span><b>Bateria baixa.</b> A estação indicou bateria baixa no último pacote.</span></div>
+        <div class="card" id="dashCard">
+          <h3><i class="dot"></i>Última leitura<span class="sp"></span><span class="small muted" id="dashAge"></span></h3>
+          <div class="empty" id="dashEmpty">Conecte o conversor USB/RS-485 e clique em <b>Conectar</b>. A estação envia um pacote a cada 16 segundos.</div>
+          <div class="tiles" id="tiles"></div>
+        </div>
+      </section>
+
+      <!-- Tabela -->
+      <section class="panel" id="panel-table">
+        <div class="card">
+          <h3><i class="dot"></i>Pacotes recebidos<span class="sp"></span><span class="small muted" id="tblCount"></span></h3>
+          <div class="btns" style="margin-bottom:12px">
+            <label class="opt" style="margin:0"><input type="checkbox" id="tblHex"> Frame (hex)</label>
+            <label class="opt" style="margin:0"><input type="checkbox" id="tblOnlyErr"> Só erros e alertas</label>
+            <span class="sp" style="flex:1"></span>
+            <button class="btn ghost sm" id="tblCsv" title="Baixa os pacotes desta sessão (até os últimos 500) em CSV"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zm14-9h-4V3H9v8H5l7 7z"/></svg>Exportar CSV</button>
+            <button class="btn ghost sm" id="tblClear">Limpar</button>
+          </div>
+          <div class="empty" id="tblEmpty">Nenhum pacote recebido ainda.</div>
+          <div class="scroll tblwrap hide" id="tblWrap"><table class="tbl data"><thead id="tblHead"></thead><tbody id="tblBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- Texto -->
+      <section class="panel" id="panel-text">
+        <div class="card">
+          <h3><i class="dot"></i>Saída decodificada</h3>
+          <div class="btns" style="margin-bottom:10px">
+            <label class="opt" style="margin:0"><input type="checkbox" id="txtTime" checked> Horário</label>
+            <label class="opt" style="margin:0"><input type="checkbox" id="txtHex"> Frame (hex)</label>
+            <label class="opt" style="margin:0"><input type="checkbox" id="txtDetail"> Detalhado</label>
+            <span class="sp" style="flex:1"></span>
+            <button class="btn ghost sm" id="txtSave" title="Salvar o texto da tela em um arquivo .txt"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zm14-9h-4V3H9v8H5l7 7z"/></svg>Salvar .txt</button>
+            <button class="btn ghost sm" id="txtClear">Limpar</button>
+          </div>
+          <pre class="term mon" id="txtOut"></pre>
+        </div>
+      </section>
+
+      <!-- Referência: especificações e protocolo do manual -->
+      <section class="panel" id="panel-ref">
+        <div class="card">
+          <h3><i class="dot"></i>Especificações do fabricante</h3>
+          <p class="desc">Manual FG-0WN24C-B4U1 (WH24C), seção 5. Fora da faixa de medição o valor aparece como <b>aviso</b>; marcador de inválido ou valor fora do protocolo aparece como <b>falha</b>.</p>
+          <div class="scroll"><table class="tbl multi" id="refSpecs"></table></div>
+        </div>
+        <div class="card">
+          <h3><i class="dot"></i>Pacote de dados (RS-485)</h3>
+          <p class="desc">9600 bps (padrão, ajustável na estação), 8 bits, 1 stop, sem paridade. Um pacote a cada 16 s: 17 bytes, ou 20 bytes nas estações com barômetro.</p>
+          <div class="scroll"><table class="tbl multi" id="refProto"></table></div>
+          <p class="note">Validação: o pacote só é aceito com o <b>CRC-8</b> (polinômio 0x31, valor inicial 0, bytes 0 a 14) e o <b>checksum</b> (soma dos bytes 0 a 15, sem o vai-um) conferindo. Pacotes com erro são contados, aparecem na Tabela e no Texto e podem ir para a gravação, mas não alteram o Dashboard.</p>
+          <p class="note warn">Vento e rajada seguem o firmware do coletor BeWeather: fator 1,12 m/s e curva de calibração até 14,5 km/h (limite de 50 m/s). O manual da WH24C indica 0,4 m/s para o vento. Os fatores podem ser alterados em Desenvolvedor &gt; Fatores de conversão e ficam registrados nas gravações.</p>
+        </div>
+        <div class="card">
+          <h3><i class="dot"></i>Instalação e manutenção (resumo do manual)</h3>
+          <ul class="howto">
+            <li>Cabo: <b>preto</b> GND · <b>verde</b> VDD 4,2 a 6 V DC · <b>vermelho</b> RS-485 A · <b>amarelo</b> RS-485 B.</li>
+            <li>LED: aceso por 4 s ao ligar; depois pisca uma vez a cada 16 s (cada transmissão).</li>
+            <li>Reset: segure o botão RESET por 3 s. O código de segurança (ID) muda a cada reinício.</li>
+            <li>Alinhe as marcas N/E/S/W do sensor de direção com o norte real: o erro de montagem vira erro permanente de direção.</li>
+            <li>Limpe o pluviômetro e o sensor de radiação a cada 3 meses.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Modo Desenvolvedor (com senha) -->
+      <section class="panel" id="panel-dev">
+        <div class="devwarn"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg><span style="flex:1">Modo Desenvolvedor: as alterações mudam a conversão dos pacotes neste computador e ficam registradas no log técnico e nos arquivos de gravação.</span><button class="btn ghost sm" id="devLock" type="button">Bloquear</button></div>
+
+        <details class="devgrp" id="dgConv" open>
+          <summary><svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg><span><b>Conversão e recepção</b><small>Fatores de conversão dos valores brutos e separação dos pacotes</small></span></summary>
+          <div class="devgrp-body">
+        <div class="card">
+          <h3><i class="dot"></i>Fatores de conversão<span class="sp"></span><span class="tag warn hide" id="dvFactorsTag">personalizado</span></h3>
+          <p class="desc">Multiplicam os valores brutos do pacote. Padrão = firmware do coletor BeWeather (ws_wh24c.c), para a tela bater com o que o coletor envia ao servidor. Valem para este computador e saem no cabeçalho das gravações.</p>
+          <div class="form" id="dvFactors"></div>
+          <label class="opt" style="margin-top:12px"><input type="checkbox" id="dvCurve"> Curva de calibração do coletor no vento e na rajada: até 14,5 km/h, y = 2,30403498·x − 0,08951347·x² (km/h); limite de 50 m/s</label>
+          <p class="note">O manual da WH24C indica 0,4 m/s para o vento; o firmware usa 1,12 m/s. Para ver o valor linear do manual, use 0,4 e desligue a curva.</p>
+          <div class="btns end">
+            <button class="btn sm" id="dvFactorsSave">Salvar fatores</button>
+            <button class="btn ghost sm" id="dvFactorsReset">Restaurar padrão</button>
+          </div>
+          <p class="note" id="dvFactorsMsg"></p>
+        </div>
+        <div class="card">
+          <h3><i class="dot"></i>Recepção</h3>
+          <div class="form">
+            <label>Silêncio que encerra um pacote (ms)<span class="inp"><input id="dvGap" type="number" min="10" max="2000" step="10"></span></label>
+          </div>
+          <label class="opt" style="margin-top:12px"><input type="checkbox" id="dvAcceptSum"> Aceitar pacotes com checksum errado quando o CRC confere</label>
+          <label class="opt"><input type="checkbox" id="dvLogChunks"> Registrar no log técnico cada bloco de bytes recebido (hex)</label>
+          <div class="btns end"><button class="btn sm" id="dvRxSave">Salvar recepção</button><button class="btn ghost sm" id="dvRxReset">Restaurar padrão</button></div>
+          <p class="note" id="dvRxMsg"></p>
+        </div>
+          </div>
+        </details>
+
+        <details class="devgrp" id="dgTest">
+          <summary><svg viewBox="0 0 24 24"><path d="M7 2v2h1v14a4 4 0 0 0 8 0V4h1V2zm7 12h-4V4h4z"/></svg><span><b>Testes sem a estação</b><small>Decodificar um pacote digitado e simular a estação</small></span></summary>
+          <div class="devgrp-body">
+        <div class="card">
+          <h3><i class="dot"></i>Pacote manual</h3>
+          <p class="desc">Cole os bytes em hexadecimal (ex.: a saída do simulador em Python). "Injetar" passa o pacote pelo mesmo caminho da porta serial, marcado como MANUAL.</p>
+          <textarea class="code" id="dvHex" rows="3" spellcheck="false" autocomplete="off" placeholder="24 FA 53 62 8A 45 00 00 00 19 00 02 00 00 00 .. .."></textarea>
+          <div class="btns end">
+            <button class="btn ghost sm" id="dvExample">Exemplo</button>
+            <button class="btn ghost sm" id="dvDecode">Decodificar</button>
+            <button class="btn sm" id="dvInject">Injetar</button>
+          </div>
+          <pre class="term resp" id="dvOut"></pre>
+        </div>
+        <div class="card" id="simCard">
+          <h3><i class="dot"></i>Simulador da estação<span class="sp"></span><span class="tag hide" id="simTag">em execução</span></h3>
+          <p class="desc">Gera pacotes válidos com valores variando, marcados como SIMULADO na tela, no log e nas gravações. Para testar a interface e a gravação sem hardware.</p>
+          <div class="form">
+            <label>Intervalo<span class="inp"><select id="simEvery"><option value="16">16 s (como a estação)</option><option value="5">5 s</option><option value="2">2 s</option></select></span></label>
+          </div>
+          <label class="opt" style="margin-top:12px"><input type="checkbox" id="simPressure"> Com barômetro (pacote de 20 bytes)</label>
+          <label class="opt"><input type="checkbox" id="simErrors"> Erros ocasionais (1 em cada 8 pacotes com CRC ou checksum errado)</label>
+          <div class="btns end"><button class="btn sm" id="simStart">Iniciar</button><button class="btn ghost sm hide" id="simStop">Parar</button></div>
+        </div>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <!-- Coluna direita: log técnico -->
+    <aside class="col side-right">
+      <details class="card log" id="logCard" open>
+        <summary>Log técnico<span class="sp"></span><span class="logstat"><i></i>Salvo em log/</span><button class="btn ghost sm" id="logSave" title="Salvar o log da tela em um arquivo .txt">Salvar .txt</button><button class="btn ghost sm" id="logClear" title="Limpa só a tela; o arquivo em log/ é mantido">Limpar tela</button></summary>
+        <pre class="term" id="log"></pre>
+      </details>
+    </aside>
+  </div>
+    </div>
+  </div>
+  <footer>
+    <span><b>WS Monitor</b> v<span id="appVersion"></span> · Leitura da estação meteorológica WH24C (RS-485)</span>
+    <span>Web Serial · protocolo do manual FG-0WN24C-B4U1</span>
+  </footer>
+</div>
+<dialog class="dlg" id="dlg">
+  <h4 id="dlgTitle"></h4>
+  <div class="body" id="dlgBody"></div>
+  <div class="btns"><button class="btn ghost" id="dlgCancel">Cancelar</button><button class="btn" id="dlgOk">Confirmar</button></div>
+</dialog>
+</body>
+</html>

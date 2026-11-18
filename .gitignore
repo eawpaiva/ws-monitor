@@ -1,0 +1,19 @@
+# Log técnico gravado pelo app (pacotes e IDs das estações)
+log/
+
+# Pacote de distribuição (gerado por tools/empacotar.ps1)
+dist/
+
+# Gravações de medições salvas por engano dentro do projeto
+*.csv
+
+# Sistema operacional / editores
+Thumbs.db
+desktop.ini
+.DS_Store
+*.lnk
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.log

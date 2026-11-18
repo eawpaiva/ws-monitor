@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>WS Monitor · teste da interface</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0a0a; color: #f4f1ec; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+  #summary { position: fixed; right: 8px; bottom: 8px; background: #161413; border: 1px solid #2a2624; border-radius: 8px; padding: 4px 10px; z-index: 9; }
+  .ok { color: #6fd39a; } .err { color: #ff8a7a; }
+  body.shot #summary { display: none; }
+</style>
+</head>
+<body>
+<!-- Abre o app num iframe e injeta pacotes da WH24C pelo mesmo caminho da porta serial (handleBurst),
+     sem hardware. Parâmetros: ?view=dash|table|text|ref · &shot=1 esconde o resumo (captura de tela).
+     Uso: http://localhost:<porta>/tests/ui.html  -> "N ok, 0 falha(s)" -->
+<div id="summary">rodando…</div>
+<iframe id="app" src="../index.html#dash"></iframe>
+<pre id="out" hidden></pre>
+<pre id="rep" hidden></pre>
+<script type="module">
+const q = new URLSearchParams(location.search);
+if (q.get('shot')) document.body.classList.add('shot');
+const frame = document.getElementById('app');
+const out = document.getElementById('out');
+let ok = 0, fail = 0;
+const t = (name, cond, extra = '') => { if (cond) ok++; else fail++; out.textContent += `${cond ? 'ok   ' : 'FALHA'} ${name}${!cond && extra ? ' · ' + extra : ''}\n`; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const waitFor = async (cond, tries = 3000) => { for (let i = 0; i < tries && !cond(); i++) await sleep(50); return cond(); };
+window.addEventListener('unhandledrejection', (e) => t('exceção: ' + (e.reason?.message || e.reason), false));
+
+let loads = 0;
+frame.addEventListener('load', async () => {
+  if (++loads > 1) { t('o app recarregou durante o teste (' + loads + ')', false); return; }
+  await sleep(2600);  // tela de abertura
+  const w = frame.contentWindow, doc = frame.contentDocument;
+  const app = await w.eval("import('/js/app.js')");
+  const P = await w.eval("import('/js/wh24c.js')");
+  const $ = (id) => doc.getElementById(id);
+
+  /* 30 pacotes "de 16 em 16 s" terminando agora, com valores variando */
+  const now = Date.now();
+  const N = 30;
+  for (let i = 0; i < N; i++) {
+    const v = {
+      id: 0xfa, dir: (200 + i * 4) % 360, temp: 22 + Math.sin(i / 5) * 2.5, hum: 60 + Math.cos(i / 6) * 8,
+      wind: 3 + Math.sin(i / 3) * 1.5, gust: 5.2 + Math.sin(i / 3) * 1.6, rain: 12 + Math.floor(i / 4) * 0.3,
+      uv: 1500 + i * 40, light: 38000 + i * 900, pressure: 1012.3 + Math.sin(i / 7), lowBattery: false,
+    };
+    const b = P.encodeRaw(P.rawFromValues(v));
+    app.handleBurst(b, now - (N - 1 - i) * 16000, 'serial');
+  }
+  const last = app.ctx.last;
+  t('30 pacotes aceitos', app.ctx.stats.ok === 30, String(app.ctx.stats.ok));
+  t('dashboard: temperatura exibida', $('tile-temp').querySelector('[data-v]').textContent === last.dec.values.temp.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+  t('dashboard: mini-série desenhada', !!$('tile-temp').querySelector('svg path.ln'));
+  t('dashboard: Δ chuva = 7 basculadas', $('tile-rain').textContent.includes('7 basculadas'), $('tile-rain').textContent);
+  t('estação: ID 0xFA', $('stInfo').textContent.includes('0xFA'));
+  t('estação: intervalo médio 16,0 s', $('stInfo').textContent.includes('média 16,0 s'), $('stInfo').textContent);
+
+  /* Pacote do weather.py (checksum fixo errado), um com CRC errado, lixo e um com bateria baixa */
+  const py = Uint8Array.from([0x24, 0xfa, 0x53, 0x62, 0x8a, 0x45, 0, 0, 0, 0x19, 0, 0x02, 0, 0, 0, 0, 0x2c]);
+  py[15] = P.crc8(py, 0, 15);
+  app.handleBurst(py, Date.now(), 'manual');
+  t('checksum errado é contado e recusado', app.ctx.stats.sum === 1 && app.ctx.last === last);
+  const bad = P.encodeRaw({ id: 0xfa }); bad[4] ^= 0x40;
+  app.handleBurst(bad, Date.now(), 'manual');
+  t('CRC errado é contado', app.ctx.stats.crc === 1);
+  app.handleBurst(Uint8Array.from([0x00, 0x13, 0x77]), Date.now(), 'manual');
+  t('bytes descartados contados', app.ctx.stats.junk === 3);
+  if (q.get('bat')) {
+    app.handleBurst(P.encodeRaw(P.rawFromValues({ ...last.dec.values, id: 0xfa, lowBattery: true, pressure: null })), Date.now(), 'serial');
+    t('bateria baixa mostra o aviso', !$('dashBat').classList.contains('hide'));
+  }
+
+  /* Tabela e Texto */
+  doc.querySelector('#tabs [data-tab="table"]').click();
+  await sleep(100);
+  const rows = 32 + (q.get('bat') ? 1 : 0);
+  t(`tabela: ${rows} linhas`, $('tblBody').children.length === rows, String($('tblBody').children.length));
+  t('tabela: linha com ERRO CHECKSUM', $('tblBody').textContent.includes('ERRO CHECKSUM'));
+  doc.querySelector('#tabs [data-tab="text"]').click();
+  await sleep(100);
+  t('texto: linha compacta', $('txtOut').textContent.includes('ERRO CRC') && $('txtOut').textContent.includes('Bytes descartados'));
+  t('log técnico registra os pacotes', $('log').textContent.includes('ERRO CHECKSUM'));
+
+  /* Gravação (CSV e TXT): o "Salvar como" é trocado por um arquivo do OPFS, com a mesma API de escrita */
+  if (!q.get('shot')) {
+    const opfs = await w.navigator.storage.getDirectory();
+    w.showSaveFilePicker = async ({ suggestedName }) => opfs.getFileHandle(suggestedName, { create: true });
+    for (const fmt of ['csv', 'txt']) {
+      doc.querySelector(`#recFmt [data-fmt="${fmt}"]`).click();
+      $('recOperator').value = 'Teste; operador';
+      $('recDevice').value = 'WH24C-0001';
+      $('recStart').click();
+      await waitFor(() => app.ctx.recorder.active);
+      t(`${fmt}: gravação iniciada`, app.ctx.recorder.active);
+      /* Troca de tela entre os pacotes: não pode afetar a gravação nem o relatório */
+      const order = ['table', 'text', 'ref', 'dash'];
+      for (let i = 0; i < 3; i++) {
+        doc.querySelector(`#tabs [data-tab="${order[i]}"]`).click();
+        await sleep(30);
+        app.handleBurst(P.encodeRaw({ id: 0xfa, temp: 653 + i }), Date.now(), 'serial');
+      }
+      doc.querySelector('#tabs [data-tab="ref"]').click();
+      app.handleBurst(bad, Date.now(), 'serial');
+      if (fmt === 'txt') app.handleBurst(P.encodeRaw({ id: 0xfa, temp: 999 }), Date.now(), 'manual');
+      const expRows = fmt === 'txt' ? 5 : 4;
+      await waitFor(() => app.ctx.recorder.rows === expRows);
+      t(`${fmt}: Referência esconde Estação e Gravação`, $('recCard').parentElement === $('stCard').parentElement && w.getComputedStyle($('stCard').parentElement).display === 'none');
+      $('recPill').click();
+      await sleep(100);
+      t(`${fmt}: indicador "Gravando" leva ao quadro da gravação`, app.ctx.tab === 'dash' && w.getComputedStyle($('recCard')).display !== 'none');
+      $('recStop').click();
+      await waitFor(() => !app.ctx.recorder.active && app.ctx.recorder.hash);
+      await sleep(100);
+      const r = app.ctx.recorder;
+      t(`${fmt}: sem erro de escrita`, !r.error, String(r.error?.name) + ' ' + String(r.error?.message) + ' recInvalid=' + $('recInvalid').checked + ' opts=' + JSON.stringify(app.ctx.recOpts) + ' crc=' + app.ctx.stats.crc);
+      t(`${fmt}: log sem erro de gravação`, !/Erro (ao|de) (gravar|encerrar)/.test($('log').textContent), ($('log').textContent.match(/.*Erro (ao|de) (gravar|encerrar).*/g) || []).join(' / ') + ` active=${r.active} hash=${r.hash} rows=${r.rows}`);
+      const file = await (await opfs.getFileHandle(r.name)).getFile();
+      const text = await file.text();
+      const hash = [...new Uint8Array(await w.crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map((x) => x.toString(16).padStart(2, '0')).join('');
+      t(`${fmt}: ${expRows} pacotes gravados, trocando de tela entre eles`, r.rows === expRows, String(r.rows));
+      t(`${fmt}: SHA-256 exibido confere com o arquivo`, r.hash === hash && $('recInfo').textContent.includes(hash), `rec ${r.hash} arq ${hash} tela ${$('recInfo').textContent.includes(r.hash)} size ${r.size}/${file.size} rows ${r.rows} :: ${JSON.stringify(text.slice(-300))}`);
+      t(`${fmt}: nome sugerido com o equipamento`, r.name.startsWith('wh24c_WH24C-0001_') && r.name.endsWith('.' + fmt), r.name);
+      if (fmt === 'csv') {
+        const lines = text.replace(/^﻿/, '').trim().split('\r\n');
+        const hdr = lines.findIndex((l) => l.startsWith('data_hora_local;'));
+        t('csv: cabeçalho de identificação com # e operador entre aspas', lines[0].startsWith('# ') && text.includes('Operador: Teste; operador'));
+        t('csv: cabeçalho das colunas + 4 linhas + fim', hdr > 0 && lines.length === hdr + 6 && lines[lines.length - 1].startsWith('# Fim'), String(lines.length - hdr));
+        t('csv: valores com vírgula decimal (25,3)', lines[hdr + 1].includes(';25,3;'), lines[hdr + 1]);
+        t('csv: linha do erro de CRC', lines[hdr + 4].includes('ERRO CRC'));
+        t('csv: colunas de vento em km/h e brutas', lines[hdr].includes('velocidade_vento_kmh') && lines[hdr].includes('vento_bruto'));
+        /* Relatório do monitoramento */
+        t('relatório: botão aparece depois de parar', !$('recReport').classList.contains('hide'));
+        const repName = r.name.replace(/\.csv$/, '') + '_relatorio.txt';
+        $('recReport').click();
+        let rep = '';
+        await waitFor(() => { opfs.getFileHandle(repName).then((h) => h.getFile()).then((f) => f.text()).then((x) => { rep = x; }).catch(() => {}); return rep.length > 0; });
+        t('relatório: salvo com o nome do arquivo de medições', rep.length > 0, repName);
+        document.getElementById('rep').textContent = rep;
+        t('relatório: identificação, SHA-256 e comunicação', rep.includes('Teste; operador') && rep.includes(r.hash) && /Pacotes válidos \.+ 3/.test(rep) && /Erros de CRC \/ checksum \.+ 1 \/ 0/.test(rep), rep.slice(0, 600));
+        t('relatório: estatística da temperatura (mín. 25,3, máx. 25,5, média 25,4)', /Temperatura\s+°C\s+3\s+25,3\s+25,5\s+25,4/.test(rep));
+      } else {
+        t('txt: cabeçalho legível + linhas + fim', text.includes('registro de medições') && text.includes('T 25,4 °C') && text.includes('ERRO CRC') && /Fim: .* 5 pacote/.test(text));
+        t('txt: quebras de linha do Windows (CRLF)', !/[^\r]\n/.test(text));
+        t('txt: pacote MANUAL vai para o arquivo, mas não para a estatística do relatório', text.includes('[MANUAL]') && app.ctx.recStats.nonSerial === 1 && app.ctx.recStats.ok === 3 && app.ctx.recStats.f.temp.max < 26);
+      }
+    }
+  }
+
+  /* Desenvolvedor: só a Estação fica na lateral */
+  w.sessionStorage.setItem('wsmonitor.dev', '1');  // pula a senha só neste teste
+  doc.querySelector('#tabs [data-tab="dev"]').click();
+  await sleep(100);
+  t('Desenvolvedor: Estação visível e Gravação oculta', w.getComputedStyle($('stCard')).display !== 'none' && w.getComputedStyle($('recCard')).display === 'none');
+  const view = q.get('view') || 'dash';
+  if (view === 'dev') {
+    w.sessionStorage.setItem('wsmonitor.dev', '1');  // pula a senha só neste teste
+    doc.getElementById('dgTest').open = true;
+    doc.getElementById('dvExample').click();
+  }
+  doc.querySelector(`#tabs [data-tab="${view}"]`).click();
+  await sleep(300);
+  document.getElementById('summary').innerHTML = `<b id="result" class="${fail ? 'err' : 'ok'}">${ok} ok, ${fail} falha(s)</b>`;
+  out.hidden = false;
+  document.getElementById('summary').title = out.textContent;
+});
+</script>
+</body>
+</html>
